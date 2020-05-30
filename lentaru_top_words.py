@@ -1,7 +1,20 @@
 import argparse
 import csv
+import string
+import nltk
+import os
+
+from collections import Counter
+from datetime import datetime
 
 from requests_html import HTMLSession
+
+from pprint import pprint
+
+try:
+    nltk.corpus.stopwords.words('russian')
+except LookupError:
+    nltk.download('stopwords')
 
 
 SITE_URL = 'https://lenta.ru'
@@ -10,26 +23,17 @@ CSS_NEWS_ITEM = '.row .js-content'
 CSS_NEWS_TEXT = '.b-text p'
 
 
-class LentaRuTopWordsParse:
-    def __init__(self, top_words, data_dir, count_news, url=SITE_URL):
-        self.top_words = top_words
+class LentaRuParserCategory:
+
+    def __init__(self, url, name, session, data_dir, count_news):
+        self.url = url
+        self.name = name
+        self.session = session
         self.data_dir = data_dir
         self.count_news = count_news
-        self.url = url
-        self.session = HTMLSession()
+        self.stop_words = set(nltk.corpus.stopwords.words('russian'))
 
-    def get_category_urls(self, selector=CSS_CATEGORY_ITEM):
-        resp = self.session.get(self.url)
-        category_urls = []
-        for el in resp.html.find(selector):
-            if not el.absolute_links:
-                continue
-            link = el.absolute_links.pop()
-            if '/rubrics/' in link:
-                category_urls.append(link)
-        return category_urls
-
-    def get_news_urls(self, category_url, selector=CSS_NEWS_ITEM):
+    def extract_news_urls(self, category_url, selector=CSS_NEWS_ITEM):
         resp = self.session.get(category_url)
         news_urls = [
             i for i in resp.html.find(selector)[0].absolute_links
@@ -37,52 +41,106 @@ class LentaRuTopWordsParse:
         ]
         return news_urls[:self.count_news]
 
-    def get_text_news(self, news_url, selector=CSS_NEWS_TEXT):
+    def extract_text_news(self, news_url, selector=CSS_NEWS_TEXT):
         resp = self.session.get(news_url)
         return ' '.join([i.text for i in resp.html.find(selector)])
 
-    def get_top_category_words(self):
-        for category_url in self.get_category_urls():
-            print(category_url)
-            for news_url in self.get_news_urls(category_url):
-                print(news_url)
-                print(self.get_text_news(news_url))
+    def count_words(self, text_news):
+        words = []
+        for word in text_news.split():
+            word = word.strip(string.punctuation + '—').lower()
+            if not word or word.isdigit() or word in self.stop_words:
+                continue
+            words.append(word)
+        return Counter(words)
+
+    def get_words(self):
+        counters = []
+        for news_url in self.extract_news_urls(self.url):
+            text = self.extract_text_news(news_url)
+            counters.append(self.count_words(text))
+        return sum(counters, Counter())
+
+    def save_csv(self, words):
+        csv_name = '{}_{}.csv'.format(
+            self.name, datetime.now().strftime('%Y%d%m_%H%M%S')
+        )
+        with open(os.path.join(self.data_dir, csv_name), 'w') as f:
+            writer = csv.DictWriter(f, fieldnames=('word', 'frequency'))
+            writer.writeheader()
+            for word, frequency in words:
+                writer.writerow({'word': word, 'frequency': frequency})
 
 
-def save_csv(words, csv_name):
-    with open(csv_name, 'w') as f:
-        writer = csv.DictWriter(f, fieldnames=('word', 'frequency'))
-        writer.writeheader()
-        for word, frequency in words:
-            writer.writerow({'word': word, 'frequency': frequency})
+class LentaRuParserTopWords:
+    def __init__(self, count_words, data_dir, count_news, url=SITE_URL):
+        self.url = url
+        self.session = HTMLSession()
+        self.count_words = count_words
+        self.data_dir = data_dir
+        self.count_news = count_news
+
+    def extract_categories(self, selector=CSS_CATEGORY_ITEM):
+        resp = self.session.get(self.url)
+        categories = {}
+        for el in resp.html.find(selector):
+            if not el.absolute_links:
+                continue
+            link = el.absolute_links.pop()
+            if '/rubrics/' in link:
+                name = link.rstrip('/').rsplit('/', 1)[-1]
+                categories[name] = link
+        return categories
+
+    def exclude_intersection_top_words(self):
+        pass
+
+    def run(self):
+        categories = self.extract_categories()
+        for name, cat_url in categories.items():
+            pprint((name, cat_url))
+            c = LentaRuParserCategory(
+                url=cat_url,
+                name=name,
+                session=self.session,
+                data_dir=self.data_dir,
+                count_news=self.count_news,
+            )
+            words = c.get_words()
+            pprint(words.most_common(self.count_words))
+            c.save_csv(words.most_common(self.count_words))
 
 
 def main():
     parser = argparse.ArgumentParser(
         add_help=True,
-        description="Скрипт для оценки частотности слов в новостях lenta.ru"
+        description='Скрипт для оценки частотности слов в новостях lenta.ru.'
     )
     parser.add_argument(
         '-d', '--data-dir', type=str, default='./data', required=False,
-        help='Каталог для сохранения результат.'
+        help='Каталог для сохранения результата.'
     )
     parser.add_argument(
-        '-w', '--top-words', type=int, default=20, required=False,
-        help='Количество топовых слов в статьях новостей.'
+        '-w', '--count-words', type=int, default=20, required=False,
+        help='Количество топовых слов для категории сайта, которое требуется '
+             'получить.'
     )
     parser.add_argument(
         '-n', '--count-news', type=int, default=10, required=False,
-        help='Максимальное количество статьей в категории сайта, которое'
-             'требуется обработать.'
+        help='Максимальное количество статьей в категории сайта, которое '
+             'требуется проанализировать. Но не больше, чем всего статей на '
+             'первой странице категории.'
     )
     args = parser.parse_args()
 
-    parser = LentaRuTopWordsParse(
-        top_words=args.top_words,
+    os.makedirs(args.data_dir, exist_ok=True)
+
+    parser = LentaRuParserTopWords(
+        count_words=args.count_words,
         data_dir=args.data_dir,
         count_news=args.count_news,
     )
-    parser.get_top_category_words()
+    parser.run()
 
 
 if __name__ == '__main__':
