@@ -3,6 +3,7 @@ import csv
 import string
 import nltk
 import os
+import operator
 
 from collections import Counter
 from datetime import datetime
@@ -31,6 +32,7 @@ class LentaRuParserCategory:
         self.session = session
         self.data_dir = data_dir
         self.count_news = count_news
+        self.words = None
         self.stop_words = set(nltk.corpus.stopwords.words('russian'))
 
     def extract_news_urls(self, category_url, selector=CSS_NEWS_ITEM):
@@ -54,21 +56,18 @@ class LentaRuParserCategory:
             words.append(word)
         return Counter(words)
 
-    def get_words(self):
+    def fill_words(self):
         counters = []
         for news_url in self.extract_news_urls(self.url):
             text = self.extract_text_news(news_url)
             counters.append(self.count_words(text))
-        return sum(counters, Counter())
+        self.words = sum(counters, Counter())
 
-    def save_csv(self, words):
-        csv_name = '{}_{}.csv'.format(
-            self.name, datetime.now().strftime('%Y%d%m_%H%M%S')
-        )
-        with open(os.path.join(self.data_dir, csv_name), 'w') as f:
+    def save_csv(self, count_words):
+        with open(os.path.join(self.data_dir, f'{self.name}.csv'), 'w') as f:
             writer = csv.DictWriter(f, fieldnames=('word', 'frequency'))
             writer.writeheader()
-            for word, frequency in words:
+            for word, frequency in self.words.most_common(count_words):
                 writer.writerow({'word': word, 'frequency': frequency})
 
 
@@ -92,23 +91,36 @@ class LentaRuParserTopWords:
                 categories[name] = link
         return categories
 
-    def exclude_intersection_top_words(self):
-        pass
+    def exclude_parsers_intersection(self, parsers):
+        max_counter = Counter()
+        for parser in parsers:
+            max_counter = max_counter | parser.words
+        already_use = set()
+        for parser in parsers:
+            counter = Counter()
+            for word, count in parser.words.items():
+                if max_counter[word] <= count and word not in already_use:
+                    counter[word] = count
+                    already_use.add(word)
+            parser.words = counter
 
     def run(self):
-        categories = self.extract_categories()
-        for name, cat_url in categories.items():
-            pprint((name, cat_url))
-            c = LentaRuParserCategory(
-                url=cat_url,
+        parsers = []
+        for name, category_url in self.extract_categories().items():
+            parser = LentaRuParserCategory(
+                url=category_url,
                 name=name,
                 session=self.session,
                 data_dir=self.data_dir,
                 count_news=self.count_news,
             )
-            words = c.get_words()
-            pprint(words.most_common(self.count_words))
-            c.save_csv(words.most_common(self.count_words))
+            parser.fill_words()
+            parsers.append(parser)
+
+        self.exclude_parsers_intersection(parsers)
+
+        for parser in parsers:
+            parser.save_csv(self.count_words)
 
 
 def main():
@@ -132,12 +144,13 @@ def main():
              'первой странице категории.'
     )
     args = parser.parse_args()
-
-    os.makedirs(args.data_dir, exist_ok=True)
-
+    data_dir = os.path.join(
+        args.data_dir, datetime.now().strftime('%Y%d%m_%H%M%S')
+    )
+    os.makedirs(data_dir, exist_ok=True)
     parser = LentaRuParserTopWords(
+        data_dir=data_dir,
         count_words=args.count_words,
-        data_dir=args.data_dir,
         count_news=args.count_news,
     )
     parser.run()
