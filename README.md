@@ -18,3 +18,25 @@
     - Частотность
 
 ## Решение
+
+Решение оформлено в виде утилиты cli:
+```
+$ python lentaru_top_words.py --help
+usage: lentaru_top_words.py [-h] [-d DATA_DIR] [-w COUNT_WORDS]
+                            [-n COUNT_NEWS]
+
+Скрипт для оценки частотности слов в новостях lenta.ru.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -d DATA_DIR, --data-dir DATA_DIR
+                        Каталог для сохранения результата.
+  -w COUNT_WORDS, --count-words COUNT_WORDS
+                        Количество топовых слов для категории сайта, которое
+                        требуется получить.
+  -n COUNT_NEWS, --count-news COUNT_NEWS
+                        Максимальное количество статьей в категории сайта,
+                        которое требуется проанализировать. Но не больше, чем
+                        всего статей на первой странице категории.
+
+```
