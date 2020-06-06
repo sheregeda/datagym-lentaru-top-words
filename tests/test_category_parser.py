@@ -3,46 +3,14 @@ from urllib.parse import urljoin
 
 import pytest
 
-from requests_html import HTMLSession
-
-from parser import (
-    LentaRuParserCategory, CSS_NEWS_ITEM, CSS_NEWS_TEXT, SITE_URL
-)
-
-
-@pytest.fixture()
-def css_news_item():
-    return CSS_NEWS_ITEM.replace('.', '')
-
-
-@pytest.fixture()
-def css_news_text():
-    return CSS_NEWS_TEXT.replace('.', '')
-
-
-@pytest.fixture()
-def category_url():
-    return 'https://lenta.ru/rubrics/world/'
-
-
-@pytest.fixture()
-def news_url():
-    return 'https://lenta.ru/news/2018/09/15/bestplaces/'
-
-
-@pytest.fixture()
-def session():
-    return HTMLSession()
-
-
-@pytest.fixture()
-def count_news():
-    return 2
+from parser import LentaRuParserCategory, SITE_URL
 
 
 @pytest.fixture()
 def parser(category_url, session, count_news):
-    return LentaRuParserCategory(category_url, session, count_news)
+    return LentaRuParserCategory(
+        url=category_url, session=session, count_news=count_news
+    )
 
 
 def test_extract_news_urls_ok(

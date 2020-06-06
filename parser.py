@@ -91,7 +91,7 @@ class LentaRuParserCategory:
     def get_words(self):
         """
         Посчитать количество слов, которые встречаются в текстах новостных
-        статьей.
+        статьей категории.
 
         :return:
             `collections.Counter`, счетчик слов.
@@ -104,6 +104,11 @@ class LentaRuParserCategory:
 
 
 class LentaRuParserTopWords:
+    """
+    Инкапсулирует логику извлечения и сохранения частотности слов в новостных
+    статьях всех категорий сайта lenta.ru, которые представлены на главной
+    странице.
+    """
     def __init__(self, count_words, data_dir, count_news, url=SITE_URL):
         self.url = url
         self.session = HTMLSession()
@@ -112,6 +117,15 @@ class LentaRuParserTopWords:
         self.count_news = count_news
 
     def extract_categories(self, selector=CSS_CATEGORY_ITEM):
+        """
+        Извлечь абсолютные ссылки на страницы категорий/рубрик сайта.
+
+        :param selector:
+            `str`, css селектор для поиска категорий на главной странице сайта.
+
+        :return:
+            `list`, список абсолютных ссылок.
+        """
         resp = self.session.get(self.url)
         categories = {}
         for el in resp.html.find(selector):
@@ -124,6 +138,14 @@ class LentaRuParserTopWords:
         return categories
 
     def save_csv(self, category_name, counter):
+        """
+        Сохранить результат подсчета частотности слов для категории в csv файл.
+
+        :param category_name:
+            `str`, наименование категории.
+        :param counter:
+            `collections.Counter`, счетчик слов.
+        """
         csv_name = os.path.join(self.data_dir, f'{category_name}.csv')
         with open(csv_name, 'w') as f:
             writer = csv.DictWriter(f, fieldnames=('word', 'frequency'))
@@ -131,7 +153,19 @@ class LentaRuParserTopWords:
             for word, frequency in counter.most_common(self.count_words):
                 writer.writerow({'word': word, 'frequency': frequency})
 
-    def exclude_counters_intersection(self, counters):
+    @staticmethod
+    def exclude_counters_intersection(counters):
+        """
+        Исключить повторение слов в счетчиках частотности для категорий.
+        Для слова выбирается та категория, где оно встречается чаще всего. Если
+        частота между категориями равна, то выбирается первая из списка.
+
+        :param counters:
+            `dict`, словарь, в котором ключом является наименование категории,
+            а значение это счетчик частотности слов в этой категории.
+        :return:
+            `dict`, словарь категорий для которых удалены пересечения в топах
+        """
         max_counter = Counter()
         for counter in counters.values():
             max_counter = max_counter | counter
@@ -149,6 +183,12 @@ class LentaRuParserTopWords:
         return result
 
     def run(self):
+        """
+        Метод выполняет:
+            - извлечение абсолютных ссылок на категории сайта;
+            - получение частотности слов в новостях категорий;
+            - сохранение частотности в csv-файлы.
+        """
         counters = {}
         for name, category_url in self.extract_categories().items():
             parser = LentaRuParserCategory(

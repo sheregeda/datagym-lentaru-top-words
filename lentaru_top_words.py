@@ -31,12 +31,12 @@ def main():
         args.data_dir, datetime.now().strftime('%Y%d%m_%H%M%S')
     )
     os.makedirs(data_dir, exist_ok=True)
-    parser = LentaRuParserTopWords(
+    lenta_parser = LentaRuParserTopWords(
         data_dir=data_dir,
         count_words=args.count_words,
         count_news=args.count_news,
     )
-    parser.run()
+    lenta_parser.run()
 
 
 if __name__ == '__main__':
